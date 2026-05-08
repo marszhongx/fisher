@@ -914,17 +914,27 @@ class FishingGame extends Phaser.Scene {
 
         if (this.bobberContainer.visible && this.stateMachine.getState() === GAME_STATES.WAITING) {
             const rodTip = { x: 120, y: 195 };
-            const bobberPos = this.bobberContainer;
+            const bobberX = this.bobberContainer.x;
+            const bobberY = this.bobberContainer.y;
 
-            this.fishingLine.clear();
-            this.fishingLine.lineStyle(1, 0x888888, 0.7);
-
-            const midX = (rodTip.x + bobberPos.x) / 2;
+            const midX = (rodTip.x + bobberX) / 2;
             const midY = rodTip.y + 20;
 
+            const points = [];
+            const steps = 10;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const x = (1-t)*(1-t)*rodTip.x + 2*(1-t)*t*midX + t*t*bobberX;
+                const y = (1-t)*(1-t)*rodTip.y + 2*(1-t)*t*midY + t*t*bobberY;
+                points.push({ x, y });
+            }
+            this.fishingLine.clear();
+            this.fishingLine.lineStyle(1, 0x888888, 0.7);
             this.fishingLine.beginPath();
-            this.fishingLine.moveTo(rodTip.x, rodTip.y);
-            this.fishingLine.quadraticCurveTo(midX, midY, bobberPos.x, bobberPos.y);
+            this.fishingLine.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                this.fishingLine.lineTo(points[i].x, points[i].y);
+            }
             this.fishingLine.strokePath();
             this.fishingLine.setVisible(true);
         } else {
