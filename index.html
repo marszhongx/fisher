@@ -566,23 +566,18 @@ class FishingGame extends Phaser.Scene {
         this.stateMachine.addListener(GAME_STATES.CASTING, () => {
             this.showHint('抛竿中...');
             this.fisherIdleTween.pause();
-            this.tweens.killTweensOf(this.fisher);
-            this.fisher.setAngle(-10);
+            this.bobberContainer.setPosition(300, 100);
+            this.bobberContainer.setAlpha(0);
+            this.bobberContainer.setVisible(true);
+
             this.tweens.add({
-                targets: this.fisher,
-                angle: 10,
-                duration: 200,
+                targets: this.bobberContainer,
+                y: 180,
+                alpha: 1,
+                duration: 500,
                 ease: 'Quad.easeOut',
                 onComplete: () => {
-                    this.tweens.add({
-                        targets: this.fisher,
-                        angle: 0,
-                        duration: 200,
-                        ease: 'Quad.easeIn',
-                        onComplete: () => {
-                            this.stateMachine.setState(GAME_STATES.WAITING);
-                        }
-                    });
+                    this.stateMachine.setState(GAME_STATES.WAITING);
                 }
             });
         });
