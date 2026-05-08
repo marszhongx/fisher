@@ -285,7 +285,7 @@ class FishingGame extends Phaser.Scene {
     }
 
     createFisher() {
-        this.fisher = this.add.container(80, 220);
+        this.fisher = this.add.container(80, 180);
 
         const body = this.add.rectangle(0, 0, 12, 16, 0x4169E1);
         const head = this.add.circle(0, -14, 6, 0xFFDAB9);
@@ -298,7 +298,7 @@ class FishingGame extends Phaser.Scene {
 
         this.fisherIdleTween = this.tweens.add({
             targets: this.fisher,
-            y: 218,
+            y: 178,
             duration: 800,
             yoyo: true,
             repeat: -1,
@@ -492,7 +492,7 @@ class FishingGame extends Phaser.Scene {
 
         const progressFill = this.add.rectangle(-92, 0, 0, 24, COLORS.blue);
 
-        this.fishPullIcon = this.add.rectangle(-92, 0, 20, 20, COLORS.orange);
+        this.fishPullIcon = this.add.image(-92, 0, 'crucian_sprite').setScale(1.5);
         this.progressBar = progressFill;
 
         const weightText = this.add.text(0, 24, '', {
@@ -613,7 +613,8 @@ class FishingGame extends Phaser.Scene {
                 };
                 this.pullRarityLabel.setText(rarityNames[this.currentFish.rarity] || '普通');
 
-                this.fishPullIcon.setFillStyle(this.currentFish.color);
+                this.fishPullIcon.setTexture(this.currentFish.key + '_sprite');
+                this.fishPullIcon.setScale(1.5);
             }
 
             this.startPullLoop();
