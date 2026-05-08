@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>像素钓鱼 - Pixel Fishing</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: monospace;
+        }
+        #game-container {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script>
+const COLORS = {
+    sky: 0x87CEEB,
+    water: 0x4169E1,
+    waterDark: 0x2850A0,
+    grass: 0x228B22,
+    grassDark: 0x1A6B1A,
+    dock: 0x8B4513,
+    dockDark: 0x6B3410,
+    uiBg: 0x2F2F2F,
+    uiText: 0xFFFFFF,
+    safeZone: 0x32CD32,
+    dangerZone: 0xDC143C,
+    safeZoneBg: 0x1A4A1A,
+    dangerZoneBg: 0x4A1010,
+    warning: 0xFFD700,
+    white: 0xFFFFFF,
+    black: 0x000000,
+    orange: 0xFF8C00,
+    red: 0xFF4444,
+    yellow: 0xFFFF00,
+    purple: 0x9932CC,
+    blue: 0x4169E1
+};
+
+const FISH_DATA = {
+    crucian: {
+        name: '小鲫鱼',
+        rarity: 'common',
+        weightMin: 0.1,
+        weightMax: 0.3,
+        pullStrength: 1,
+        probability: 0.40,
+        color: 0xC0C0C0,
+        size: { w: 16, h: 10 }
+    },
+    carp: {
+        name: '鲤鱼',
+        rarity: 'common',
+        weightMin: 0.5,
+        weightMax: 1.5,
+        pullStrength: 2,
+        probability: 0.30,
+        color: 0xFF6B35,
+        size: { w: 20, h: 12 }
+    },
+    perch: {
+        name: '鳜鱼',
+        rarity: 'rare',
+        weightMin: 1.0,
+        weightMax: 2.5,
+        pullStrength: 3,
+        probability: 0.15,
+        color: 0x228B22,
+        size: { w: 18, h: 11 }
+    },
+    goldfish: {
+        name: '金鱼',
+        rarity: 'legendary',
+        weightMin: 0.2,
+        weightMax: 0.5,
+        pullStrength: 1,
+        probability: 0.10,
+        color: 0xFFD700,
+        size: { w: 14, h: 12 }
+    },
+    shark: {
+        name: '鲨鱼',
+        rarity: 'legendary',
+        weightMin: 5.0,
+        weightMax: 15.0,
+        pullStrength: 5,
+        probability: 0.05,
+        color: 0x708090,
+        size: { w: 32, h: 14 }
+    }
+};
+
+const GAME_STATES = {
+    IDLE: 'IDLE',
+    CASTING: 'CASTING',
+    WAITING: 'WAITING',
+    FISH_ON: 'FISH_ON',
+    PULLING: 'PULLING',
+    SUCCESS: 'SUCCESS',
+    ESCAPE: 'ESCAPE'
+};
+
+class StateMachine {
+    constructor() {
+        this.currentState = GAME_STATES.IDLE;
+        this.listeners = {};
+    }
+
+    addListener(state, callback) {
+        if (!this.listeners[state]) {
+            this.listeners[state] = [];
+        }
+        this.listeners[state].push(callback);
+    }
+
+    setState(newState) {
+        const oldState = this.currentState;
+        this.currentState = newState;
+        if (this.listeners[newState]) {
+            this.listeners[newState].forEach(cb => cb(newState, oldState));
+        }
+    }
+
+    getState() {
+        return this.currentState;
+    }
+}
+
+class FishSystem {
+    constructor() {
+        this.totalProbability = Object.values(FISH_DATA).reduce((sum, fish) => sum + fish.probability, 0);
+    }
+
+    selectRandomFish() {
+        let rand = Math.random() * this.totalProbability;
+        for (const [key, fish] of Object.entries(FISH_DATA)) {
+            rand -= fish.probability;
+            if (rand <= 0) {
+                return {
+                    ...fish,
+                    key,
+                    weight: fish.weightMin + Math.random() * (fish.weightMax - fish.weightMin),
+                    id: Date.now() + Math.random()
+                };
+            }
+        }
+        return null;
+    }
+
+    getFishSprite(fish, graphics) {
+        const { w, h } = fish.size;
+        graphics.clear();
+        graphics.fillStyle(fish.color);
+        graphics.fillRect(0, 2, w - 4, h - 4);
+        graphics.fillTriangle(w - 4, h / 2, w, 0, w, h);
+        graphics.fillStyle(0xFFFFFF);
+        graphics.fillRect(w - 8, 3, 2, 2);
+        graphics.fillStyle(0x000000);
+        graphics.fillRect(w - 7, 4, 1, 1);
+        graphics.fillStyle(COLORS.red);
+        graphics.fillTriangle(w - 12, h / 2, w - 8, h / 2 - 2, w - 8, h / 2 + 2);
+        return graphics.generateTexture(fish.key + '_sprite', w + 1, h);
+    }
+}
+
+class FishingGame extends Phaser.Scene {
+    constructor() {
+        super({ key: 'FishingGame' });
+        this.stateMachine = new StateMachine();
+        this.fishSystem = new FishSystem();
+        this.score = 0;
+        this.currentFish = null;
+        this.pullProgress = 0;
+        this.fishPosition = 0;
+        this.catchCount = 0;
+        this.isPulling = false;
+        this.pullDirection = 1;
+        this.lastPullTime = 0;
+        this.waveOffset = 0;
+    }
+
+    create() {
+        this.createAssets();
+        this.createBackground();
+        this.createFisher();
+        this.createWater();
+        this.createUI();
+        this.setupInput();
+        this.setupStateListeners();
+        this.updateUI();
+    }
+
+    createAssets() {
+        const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+
+        graphics.fillStyle(COLORS.sky);
+        graphics.fillRect(0, 0, 480, 320);
+        graphics.generateTexture('background', 480, 320);
+
+        graphics.clear();
+        graphics.fillStyle(0x8B6914);
+        graphics.fillRect(0, 0, 32, 32);
+        graphics.fillStyle(0x6B4914);
+        graphics.fillRect(0, 0, 32, 4);
+        graphics.lineStyle(1, 0x5B3914);
+        for (let y = 8; y < 32; y += 8) {
+            graphics.lineBetween(0, y, 32, y);
+        }
+        graphics.generateTexture('dock', 32, 32);
+
+        graphics.clear();
+        graphics.fillStyle(COLORS.dangerZone);
+        graphics.fillRect(0, 0, 32, 32);
+        graphics.fillStyle(COLORS.warning);
+        graphics.fillCircle(16, 16, 8);
+        graphics.generateTexture('bobber', 32, 32);
+
+        graphics.clear();
+        graphics.fillStyle(0x3D2817);
+        graphics.fillRect(0, 0, 4, 100);
+        graphics.fillStyle(0x5D4837);
+        graphics.fillRect(0, 0, 4, 2);
+        graphics.generateTexture('rod', 4, 100);
+
+        graphics.clear();
+        graphics.fillStyle(0xCCCCCC);
+        graphics.fillRect(0, 0, 1, 80);
+        graphics.generateTexture('line', 1, 80);
+
+        Object.values(FISH_DATA).forEach(fish => {
+            this.fishSystem.getFishSprite(fish, graphics);
+        });
+
+        graphics.clear();
+        graphics.fillStyle(0x333333);
+        graphics.fillRect(0, 0, 200, 24);
+        graphics.generateTexture('progress_bg', 200, 24);
+
+        graphics.clear();
+        graphics.fillStyle(COLORS.safeZone);
+        graphics.fillRect(0, 0, 80, 20);
+        graphics.generateTexture('safe_zone', 80, 20);
+
+        graphics.destroy();
+    }
+
+    createBackground() {
+        this.add.image(240, 160, 'background');
+
+        this.add.rectangle(240, 280, 480, 80, COLORS.grass);
+        this.add.rectangle(240, 275, 480, 10, COLORS.grassDark);
+
+        for (let x = 0; x < 480; x += 32) {
+            this.add.image(x, 268, 'dock').setOrigin(0, 0.5);
+        }
+
+        this.add.rectangle(240, 200, 480, 8, COLORS.water);
+        this.add.rectangle(240, 220, 480, 100, COLORS.waterDark);
+    }
+
+    createFisher() {
+        this.fisher = this.add.container(80, 220);
+
+        const body = this.add.rectangle(0, 0, 12, 16, 0x4169E1);
+        const head = this.add.circle(0, -14, 6, 0xFFDAB9);
+        const hat = this.add.rectangle(0, -20, 14, 4, 0x8B4513);
+        const legs = this.add.rectangle(0, 12, 10, 8, 0x2F4F4F);
+        const rod = this.add.image(10, -8, 'rod').setOrigin(0, 0);
+
+        this.fisher.add([legs, body, head, hat, rod]);
+        this.fisher.setScale(2);
+
+        this.fisherIdleTween = this.tweens.add({
+            targets: this.fisher,
+            y: 218,
+            duration: 800,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+    }
+
+    createWater() {
+        this.waterGraphics = this.add.graphics();
+        this.waves = [];
+        for (let i = 0; i < 8; i++) {
+            this.waves.push({
+                x: 60 + i * 50,
+                y: 190 + Math.sin(i) * 5,
+                phase: i * 0.5
+            });
+        }
+
+        this.bobberContainer = this.add.container(300, 180);
+        this.bobber = this.add.image(0, 0, 'bobber').setScale(1.5);
+        this.bobberContainer.add(this.bobber);
+        this.bobberContainer.setVisible(false);
+
+        this.fishingLine = this.add.graphics();
+        this.fishingLine.setVisible(false);
+    }
+
+    createUI() {
+        const uiContainer = this.add.container(0, 0);
+
+        const scoreBg = this.add.rectangle(70, 30, 140, 40, COLORS.uiBg, 0.9);
+        const scoreText = this.add.text(70, 30, '分数: 0', {
+            fontSize: '16px',
+            fontFamily: 'monospace',
+            color: '#FFFFFF'
+        }).setOrigin(0.5);
+
+        const catchBg = this.add.rectangle(70, 70, 140, 30, COLORS.uiBg, 0.9);
+        const catchText = this.add.text(70, 70, '钓获: 0 条', {
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            color: '#FFFFFF'
+        }).setOrigin(0.5);
+
+        const hintBg = this.add.rectangle(240, 300, 300, 30, COLORS.uiBg, 0.9);
+        this.hintText = this.add.text(240, 300, '点击开始钓鱼', {
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            color: '#FFFFFF'
+        }).setOrigin(0.5);
+
+        uiContainer.add([scoreBg, scoreText, catchBg, catchText, hintBg, hintBg]);
+
+        this.uiElements = {
+            scoreText,
+            catchText,
+            hintText,
+            scoreBg,
+            catchBg,
+            hintBg
+        };
+
+        this.pullUI = this.add.container(240, 100).setVisible(false);
+
+        const pullBg = this.add.rectangle(0, 0, 260, 80, COLORS.uiBg, 0.95);
+        const progressBg = this.add.image(0, -15, 'progress_bg');
+        const safeZone = this.add.image(0, -15, 'safe_zone');
+
+        const fishIcon = this.add.rectangle(0, -15, 16, 16, COLORS.orange);
+        const progressFill = this.add.rectangle(-92, -15, 0, 20, COLORS.white);
+        const pullText = this.add.text(0, 15, '按住 SPACE 或 点击 收线!', {
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            color: '#FFFFFF'
+        }).setOrigin(0.5);
+
+        this.pullProgressBar = progressFill;
+        this.pullFishIcon = fishIcon;
+
+        this.pullUI.add([pullBg, progressBg, safeZone, progressFill, fishIcon, pullText]);
+    }
+
+    setupInput() {
+        this.input.on('pointerdown', () => {
+            if (this.stateMachine.getState() === GAME_STATES.PULLING) {
+                this.handlePull();
+            } else if (this.stateMachine.getState() === GAME_STATES.IDLE) {
+                this.startCasting();
+            }
+        });
+
+        this.input.keyboard.on('keydown-SPACE', () => {
+            if (this.stateMachine.getState() === GAME_STATES.PULLING) {
+                this.handlePull();
+            } else if (this.stateMachine.getState() === GAME_STATES.IDLE) {
+                this.startCasting();
+            }
+        });
+    }
+
+    setupStateListeners() {
+        this.stateMachine.addListener(GAME_STATES.IDLE, () => {
+            this.hintText.setText('点击或按空格开始钓鱼');
+            this.bobberContainer.setVisible(false);
+            this.fishingLine.setVisible(false);
+            this.pullUI.setVisible(false);
+            this.fisherIdleTween.resume();
+        });
+
+        this.stateMachine.addListener(GAME_STATES.CASTING, () => {
+            this.hintText.setText('抛竿中...');
+            this.fisherIdleTween.pause();
+            this.tweens.add({
+                targets: this.fisher,
+                angle: { from: -10, to: 10 },
+                duration: 200,
+                yoyo: true,
+                onComplete: () => {
+                    this.stateMachine.setState(GAME_STATES.WAITING);
+                }
+            });
+        });
+
+        this.stateMachine.addListener(GAME_STATES.WAITING, () => {
+            this.hintText.setText('等待鱼儿上钩...');
+            this.bobberContainer.setPosition(300, 180);
+            this.bobberContainer.setVisible(true);
+
+            this.bobberFloatTween = this.tweens.add({
+                targets: this.bobberContainer,
+                y: 175,
+                duration: 1000,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+
+            const waitTime = 2000 + Math.random() * 4000;
+            this.time.delayedCall(waitTime, () => {
+                if (this.stateMachine.getState() === GAME_STATES.WAITING) {
+                    this.bobberFloatTween.stop();
+                    this.onFishBite();
+                }
+            });
+        });
+
+        this.stateMachine.addListener(GAME_STATES.FISH_ON, () => {
+            this.hintText.setText('有鱼上钩了!');
+            this.bobberContainer.setVisible(false);
+            this.showFishOnEffect();
+        });
+
+        this.stateMachine.addListener(GAME_STATES.PULLING, () => {
+            this.hintText.setText('收线中...');
+            this.pullUI.setVisible(true);
+            this.pullProgress = 0;
+            this.fishPosition = 0;
+            this.isPulling = false;
+            this.lastPullTime = this.time.now;
+            this.startPullLoop();
+        });
+
+        this.stateMachine.addListener(GAME_STATES.SUCCESS, () => {
+            this.pullUI.setVisible(false);
+            this.hintText.setText(`钓到了 ${this.currentFish.name}! (+${this.calculateScore()}分)`);
+            this.showSuccessEffect();
+            this.catchCount++;
+            this.score += this.calculateScore();
+            this.updateUI();
+
+            this.time.delayedCall(2500, () => {
+                this.stateMachine.setState(GAME_STATES.IDLE);
+            });
+        });
+
+        this.stateMachine.addListener(GAME_STATES.ESCAPE, () => {
+            this.pullUI.setVisible(false);
+            this.hintText.setText(`${this.currentFish ? this.currentFish.name : '鱼'} 跑掉了...`);
+            this.showEscapeEffect();
+
+            this.time.delayedCall(2000, () => {
+                this.stateMachine.setState(GAME_STATES.IDLE);
+            });
+        });
+    }
+
+    startCasting() {
+        this.stateMachine.setState(GAME_STATES.CASTING);
+
+        this.tweens.add({
+            targets: this.bobberContainer,
+            x: 300,
+            y: { from: 100, to: 180 },
+            alpha: { from: 0, to: 1 },
+            duration: 500,
+            ease: 'Quad.easeOut'
+        });
+    }
+
+    onFishBite() {
+        this.stateMachine.setState(GAME_STATES.FISH_ON);
+        this.currentFish = this.fishSystem.selectRandomFish();
+
+        this.tweens.add({
+            targets: this.fisher,
+            y: 225,
+            duration: 100,
+            yoyo: true,
+            repeat: 3,
+            onComplete: () => {
+                this.stateMachine.setState(GAME_STATES.PULLING);
+            }
+        });
+    }
+
+    handlePull() {
+        this.isPulling = true;
+        this.lastPullTime = this.time.now;
+    }
+
+    startPullLoop() {
+        this.pullInterval = this.time.addEvent({
+            delay: 16,
+            callback: this.updatePull,
+            callbackScope: this,
+            loop: true
+        });
+    }
+
+    updatePull() {
+        if (this.stateMachine.getState() !== GAME_STATES.PULLING) {
+            if (this.pullInterval) {
+                this.pullInterval.destroy();
+            }
+            return;
+        }
+
+        const progressSpeed = 0.3 + (this.currentFish ? this.currentFish.pullStrength * 0.1 : 0.3);
+
+        this.pullProgress += progressSpeed;
+
+        if (this.isPulling) {
+            const pullAmount = 1.2;
+            this.pullProgress += pullAmount;
+
+            if (this.pullProgress > 100) {
+                this.pullProgress = 100;
+            }
+        } else {
+            const decayRate = 0.5 + (this.currentFish ? this.currentFish.pullStrength * 0.15 : 0.3);
+            this.pullProgress -= decayRate;
+
+            if (this.pullProgress < 0) {
+                this.pullProgress = 0;
+            }
+        }
+
+        this.isPulling = false;
+
+        const fishSpeed = 0.3 + (this.currentFish ? this.currentFish.pullStrength * 0.08 : 0.1);
+        const fishMovement = Math.sin(this.time.now * 0.005 * fishSpeed) * fishSpeed;
+        this.fishPosition += fishMovement;
+
+        if (this.fishPosition > 80) {
+            this.fishPosition = 80;
+        } else if (this.fishPosition < -80) {
+            this.fishPosition = -80;
+        }
+
+        this.pullProgressBar.setDisplaySize(Math.max(0, this.pullProgress * 1.84), 20);
+        this.pullFishIcon.setX(-92 + this.pullProgress * 1.84);
+
+        if (this.pullProgress >= 100) {
+            this.pullInterval.destroy();
+            this.stateMachine.setState(GAME_STATES.SUCCESS);
+        } else if (this.pullProgress <= 0) {
+            this.pullInterval.destroy();
+            this.stateMachine.setState(GAME_STATES.ESCAPE);
+        }
+    }
+
+    calculateScore() {
+        if (!this.currentFish) return 0;
+        const rarityMultiplier = {
+            common: 1,
+            rare: 3,
+            legendary: 10
+        };
+        const baseScore = Math.round(this.currentFish.weight * 10);
+        return baseScore * (rarityMultiplier[this.currentFish.rarity] || 1);
+    }
+
+    showFishOnEffect() {
+        const particles = this.add.graphics();
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const x = 240 + Math.cos(angle) * 30;
+            const y = 200 + Math.sin(angle) * 30;
+
+            this.tweens.add({
+                targets: { x, y },
+                x: 240 + Math.cos(angle) * 60,
+                y: 200 + Math.sin(angle) * 60,
+                alpha: 0,
+                duration: 500,
+                ease: 'Quad.easeOut'
+            });
+        }
+    }
+
+    showSuccessEffect() {
+        if (!this.currentFish) return;
+
+        const fishSprite = this.add.image(240, 200, this.currentFish.key + '_sprite')
+            .setScale(3)
+            .setAlpha(0)
+            .setTint(this.getRarityColor(this.currentFish.rarity));
+
+        this.tweens.add({
+            targets: fishSprite,
+            y: 150,
+            alpha: 1,
+            scale: 4,
+            duration: 500,
+            ease: 'Back.easeOut',
+            onComplete: () => {
+                this.tweens.add({
+                    targets: fishSprite,
+                    alpha: 0,
+                    delay: 1500,
+                    duration: 500,
+                    onComplete: () => fishSprite.destroy()
+                });
+            }
+        });
+
+        const weightText = this.add.text(240, 240, `${this.currentFish.name} ${this.currentFish.weight.toFixed(1)}kg`, {
+            fontSize: '16px',
+            fontFamily: 'monospace',
+            color: '#FFFFFF'
+        }).setOrigin(0.5).setAlpha(0);
+
+        this.tweens.add({
+            targets: weightText,
+            alpha: 1,
+            y: 230,
+            duration: 500,
+            delay: 300,
+            onComplete: () => {
+                this.tweens.add({
+                    targets: weightText,
+                    alpha: 0,
+                    delay: 1500,
+                    duration: 500,
+                    onComplete: () => weightText.destroy()
+                });
+            }
+        });
+    }
+
+    showEscapeEffect() {
+        const text = this.add.text(240, 200, '鱼跑掉了!', {
+            fontSize: '20px',
+            fontFamily: 'monospace',
+            color: '#FF4444'
+        }).setOrigin(0.5);
+
+        this.tweens.add({
+            targets: text,
+            y: 170,
+            alpha: 0,
+            duration: 1000,
+            ease: 'Quad.easeOut',
+            onComplete: () => text.destroy()
+        });
+    }
+
+    getRarityColor(rarity) {
+        const colors = {
+            common: 0xFFFFFF,
+            rare: 0x9932CC,
+            legendary: 0xFFD700
+        };
+        return colors[rarity] || 0xFFFFFF;
+    }
+
+    updateUI() {
+        if (this.uiElements) {
+            this.uiElements.scoreText.setText(`分数: ${this.score}`);
+            this.uiElements.catchText.setText(`钓获: ${this.catchCount} 条`);
+        }
+    }
+
+    update(time, delta) {
+        this.waveOffset = time * 0.001;
+
+        this.waterGraphics.clear();
+        this.waterGraphics.fillStyle(COLORS.water, 0.3);
+
+        for (let x = 0; x < 480; x += 8) {
+            const waveY = Math.sin((x + time * 0.05) * 0.05) * 3;
+            this.waterGraphics.fillRect(x, 185 + waveY, 8, 2);
+        }
+
+        this.waterGraphics.fillStyle(COLORS.waterDark, 0.2);
+        for (let x = 0; x < 480; x += 12) {
+            const waveY = Math.sin((x + time * 0.03) * 0.04 + 1) * 2;
+            this.waterGraphics.fillRect(x, 210 + waveY, 12, 2);
+        }
+
+        if (this.bobberContainer.visible && this.stateMachine.getState() === GAME_STATES.WAITING) {
+            const rodTip = { x: 120, y: 195 };
+            const bobberPos = this.bobberContainer;
+
+            this.fishingLine.clear();
+            this.fishingLine.lineStyle(1, 0x888888, 0.7);
+
+            const midX = (rodTip.x + bobberPos.x) / 2;
+            const midY = rodTip.y + 20;
+
+            this.fishingLine.beginPath();
+            this.fishingLine.moveTo(rodTip.x, rodTip.y);
+            this.fishingLine.quadraticCurveTo(midX, midY, bobberPos.x, bobberPos.y);
+            this.fishingLine.strokePath();
+            this.fishingLine.setVisible(true);
+        } else {
+            this.fishingLine.setVisible(false);
+        }
+    }
+}
+
+const config = {
+    type: Phaser.AUTO,
+    width: 480,
+    height: 320,
+    parent: 'game-container',
+    pixelArt: true,
+    roundPixels: true,
+    backgroundColor: '#87CEEB',
+    scene: FishingGame
+};
+
+const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
