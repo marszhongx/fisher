@@ -566,13 +566,23 @@ class FishingGame extends Phaser.Scene {
         this.stateMachine.addListener(GAME_STATES.CASTING, () => {
             this.showHint('抛竿中...');
             this.fisherIdleTween.pause();
+            this.tweens.killTweensOf(this.fisher);
+            this.fisher.setAngle(-10);
             this.tweens.add({
                 targets: this.fisher,
-                angle: { from: -10, to: 10 },
+                angle: 10,
                 duration: 200,
-                yoyo: true,
+                ease: 'Quad.easeOut',
                 onComplete: () => {
-                    this.stateMachine.setState(GAME_STATES.WAITING);
+                    this.tweens.add({
+                        targets: this.fisher,
+                        angle: 0,
+                        duration: 200,
+                        ease: 'Quad.easeIn',
+                        onComplete: () => {
+                            this.stateMachine.setState(GAME_STATES.WAITING);
+                        }
+                    });
                 }
             });
         });
@@ -688,6 +698,7 @@ class FishingGame extends Phaser.Scene {
         this.stateMachine.setState(GAME_STATES.FISH_ON);
         this.currentFish = this.fishSystem.selectRandomFish();
 
+        this.tweens.killTweensOf(this.fisher);
         this.tweens.add({
             targets: this.fisher,
             y: 225,
