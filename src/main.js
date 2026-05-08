@@ -705,21 +705,16 @@ class FishingGame extends Phaser.Scene {
             return;
         }
 
-        const baseProgress = 0.5;
-        const strengthBonus = this.currentFish ? this.currentFish.pullStrength * 0.05 : 0;
-
-        this.pullProgress += baseProgress + strengthBonus;
-
         if (this.isPulling) {
-            const pullAmount = 2.0 + strengthBonus;
-            this.pullProgress += pullAmount;
+            const strengthBonus = this.currentFish ? this.currentFish.pullStrength * 0.3 : 0;
+            this.pullProgress += 2.5 + strengthBonus;
 
             if (this.pullProgress > 100) {
                 this.pullProgress = 100;
             }
             this.isPulling = false;
         } else {
-            const decayRate = 0.3 + (this.currentFish ? this.currentFish.pullStrength * 0.08 : 0.2);
+            const decayRate = 1.0 + (this.currentFish ? this.currentFish.pullStrength * 0.2 : 0);
             this.pullProgress -= decayRate;
 
             if (this.pullProgress < 0) {
