@@ -1,0 +1,33 @@
+<h2>像素风钓鱼游戏 — 核心玩法设计</h2>
+<p class="subtitle">你希望这个钓鱼游戏的核心节奏是什么风格？</p>
+
+<div class="options">
+  <div class="option" data-choice="casual" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>🌿 休闲等待型（推荐）</h3>
+      <p>抛竿后耐心等待鱼上钩，观察水面涟漪和浮标动态。没有紧迫操作压力，节奏轻松治愈，类似《星露谷物语》的钓鱼体验。实现简单，调试友好。</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="action" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>🎮 反应操作型</h3>
+      <p>鱼上钩后需要快速按键或节奏操作来收线。鱼会左右拉扯，玩家要保持力度条在安全区域，类似《钓鱼大师》的挑战模式。更有挑战性和紧张感。</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>⚖️ 混合型</h3>
+      <p>等待 + 操作结合：先等鱼上钩，然后进入小游戏（如力度条控制）来成功钓起。兼顾休闲与挑战，体验更丰富。实现复杂度适中。</p>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 32px; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+  <p class="label">💡 推荐</p>
+  <p style="margin-top: 8px;">A（休闲等待型）最适合作为 Demo 的起点——核心循环清晰（抛竿→等待→收竿→结算），代码量少，容易调试，适合用来验证像素渲染和动画系统。等基础框架跑通后，随时可以升级成 B 或 C 模式。</p>
+</div>
