@@ -877,15 +877,6 @@ class FishingGame extends Phaser.Scene {
         });
     }
 
-    getRarityColor(rarity) {
-        const colors = {
-            common: 0xFFFFFF,
-            rare: 0x9932CC,
-            legendary: 0xFFD700
-        };
-        return colors[rarity] || 0xFFFFFF;
-    }
-
     updateUI() {
         if (this.scoreText && this.catchText) {
             this.scoreText.setText(`${this.score}`);
@@ -897,41 +888,43 @@ class FishingGame extends Phaser.Scene {
         this.waveOffset = time * 0.001;
 
         this.waterGraphics.clear();
-        this.waterGraphics.fillStyle(COLORS.water, 0.3);
+        
+        const waterColor = COLORS.water;
+        const waterDarkColor = COLORS.waterDark;
+        const time05 = time * 0.05;
+        const time03 = time * 0.03;
 
+        this.waterGraphics.fillStyle(waterColor, 0.3);
         for (let x = 0; x < 480; x += 8) {
-            const waveY = Math.sin((x + time * 0.05) * 0.05) * 3;
-            this.waterGraphics.fillRect(x, 185 + waveY, 8, 2);
+            this.waterGraphics.fillRect(x, 185 + Math.sin((x + time05) * 0.05) * 3, 8, 2);
         }
 
-        this.waterGraphics.fillStyle(COLORS.waterDark, 0.2);
+        this.waterGraphics.fillStyle(waterDarkColor, 0.2);
         for (let x = 0; x < 480; x += 12) {
-            const waveY = Math.sin((x + time * 0.03) * 0.04 + 1) * 2;
-            this.waterGraphics.fillRect(x, 210 + waveY, 12, 2);
+            this.waterGraphics.fillRect(x, 210 + Math.sin((x + time03) * 0.04 + 1) * 2, 12, 2);
         }
 
         if (this.bobberContainer.visible && this.stateMachine.getState() === GAME_STATES.WAITING) {
             const rodTip = { x: 120, y: 195 };
             const bobberX = this.bobberContainer.x;
             const bobberY = this.bobberContainer.y;
-
             const midX = (rodTip.x + bobberX) / 2;
             const midY = rodTip.y + 20;
 
-            const points = [];
-            const steps = 10;
-            for (let i = 0; i <= steps; i++) {
-                const t = i / steps;
-                const x = (1-t)*(1-t)*rodTip.x + 2*(1-t)*t*midX + t*t*bobberX;
-                const y = (1-t)*(1-t)*rodTip.y + 2*(1-t)*t*midY + t*t*bobberY;
-                points.push({ x, y });
-            }
             this.fishingLine.clear();
             this.fishingLine.lineStyle(1, 0x888888, 0.7);
             this.fishingLine.beginPath();
-            this.fishingLine.moveTo(points[0].x, points[0].y);
-            for (let i = 1; i < points.length; i++) {
-                this.fishingLine.lineTo(points[i].x, points[i].y);
+            this.fishingLine.moveTo(rodTip.x, rodTip.y);
+            
+            const steps = 10;
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const t2 = t * t;
+                const mt = 1 - t;
+                const mt2 = mt * mt;
+                const x = mt2 * rodTip.x + 2 * mt * t * midX + t2 * bobberX;
+                const y = mt2 * rodTip.y + 2 * mt * t * midY + t2 * bobberY;
+                this.fishingLine.lineTo(x, y);
             }
             this.fishingLine.strokePath();
             this.fishingLine.setVisible(true);
